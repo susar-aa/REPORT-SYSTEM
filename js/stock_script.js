@@ -59,6 +59,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Setup stock filtering
     setupStockTableFiltering();
+    updateFilteredAggregates();
     
     // Setup CSV Export
     const btnExport = document.getElementById('btn-export-csv');
@@ -287,6 +288,7 @@ function setupStockTableFiltering() {
         } else if (emptyRow) {
             emptyRow.style.display = 'none';
         }
+        updateFilteredAggregates();
     }
 
     searchInput.addEventListener('input', filterTable);
@@ -404,19 +406,26 @@ function setupCountedStockInputs() {
                 row.setAttribute('data-warehouse', actualStock);
                 row.setAttribute('data-variance', data.variance);
                 
+                const costVal = parseFloat(row.getAttribute('data-cost')) || 0;
+                const varVal = parseInt(data.variance);
+                const varianceValue = varVal * costVal;
+                row.setAttribute('data-variance-value', varianceValue);
+                
                 // Update UI cells in the table row
                 const cellVariance = row.querySelector('.cell-variance');
                 if (cellVariance) {
-                    const varVal = parseInt(data.variance);
                     cellVariance.textContent = varVal > 0 ? '+' + varVal : varVal;
-                    
-                    // Update variance styling
                     cellVariance.style.color = varVal > 0 ? 'var(--accent-emerald)' : (varVal < 0 ? 'var(--accent-rose)' : 'var(--text-muted)');
+                }
+
+                const cellVarianceValue = row.querySelector('.cell-variance-value');
+                if (cellVarianceValue) {
+                    cellVarianceValue.textContent = formatCurrency(varianceValue);
+                    cellVarianceValue.style.color = varianceValue > 0 ? 'var(--accent-emerald)' : (varianceValue < 0 ? 'var(--accent-rose)' : 'var(--text-muted)');
                 }
                 
                 const cellAsset = row.querySelector('.cell-asset-value');
                 if (cellAsset) {
-                    const costVal = parseFloat(row.getAttribute('data-cost')) || 0;
                     cellAsset.textContent = formatCurrency(actualStock * costVal);
                 }
                 
@@ -455,18 +464,85 @@ function updateFilteredAggregates() {
     
     let visibleCount = 0;
     let totalCostValuation = 0;
+
+    let sumGrn = 0;
+    let sumSold = 0;
+    let sumReturned = 0;
+    let sumDamaged = 0;
+    let sumCalculated = 0;
+    let sumRemaining = 0;
+    let sumCounted = 0;
+    let sumVariance = 0;
+    let sumVarianceValue = 0;
+    let sumAssetValue = 0;
     
     rows.forEach(row => {
         if (row.style.display !== 'none') {
             visibleCount++;
+            
+            // Get data attributes or text contents
             const warehouseStock = parseInt(row.getAttribute('data-warehouse')) || 0;
             const costVal = parseFloat(row.getAttribute('data-cost')) || 0;
             totalCostValuation += warehouseStock * costVal;
+
+            sumGrn += parseInt(row.cells[2].textContent) || 0;
+            sumSold += parseInt(row.cells[3].textContent) || 0;
+            sumReturned += parseInt(row.cells[4].textContent.replace('+', '')) || 0;
+            sumDamaged += parseInt(row.cells[5].textContent.replace('-', '')) || 0;
+            sumCalculated += parseInt(row.cells[6].textContent) || 0;
+            
+            const cellRemaining = row.querySelector('.cell-remaining');
+            sumRemaining += cellRemaining ? (parseInt(cellRemaining.textContent) || 0) : 0;
+
+            const inputCounted = row.querySelector('.counted-stock-input');
+            if (inputCounted && inputCounted.value !== '') {
+                sumCounted += parseInt(inputCounted.value) || 0;
+            }
+
+            const cellVariance = row.querySelector('.cell-variance');
+            sumVariance += cellVariance ? (parseInt(cellVariance.textContent.replace('+', '')) || 0) : 0;
+
+            const cellVarValAttr = parseFloat(row.getAttribute('data-variance-value')) || 0;
+            sumVarianceValue += cellVarValAttr;
+
+            sumAssetValue += warehouseStock * costVal;
         }
     });
     
     if (countDisplay) countDisplay.textContent = visibleCount;
     if (costDisplay) costDisplay.textContent = formatCurrency(totalCostValuation);
+
+    // Update tfoot cells
+    const tfootGrn = document.getElementById('total-grn');
+    const tfootSold = document.getElementById('total-sold');
+    const tfootReturned = document.getElementById('total-returned');
+    const tfootDamaged = document.getElementById('total-damaged');
+    const tfootCalculated = document.getElementById('total-calculated');
+    const tfootRemaining = document.getElementById('total-remaining');
+    const tfootCounted = document.getElementById('total-counted');
+    const tfootVariance = document.getElementById('total-variance');
+    const tfootVarianceValue = document.getElementById('total-variance-value');
+    const tfootAssetValue = document.getElementById('total-asset-value');
+
+    if (tfootGrn) tfootGrn.textContent = sumGrn.toLocaleString();
+    if (tfootSold) tfootSold.textContent = sumSold.toLocaleString();
+    if (tfootReturned) tfootReturned.textContent = '+' + sumReturned.toLocaleString();
+    if (tfootDamaged) tfootDamaged.textContent = '-' + sumDamaged.toLocaleString();
+    if (tfootCalculated) tfootCalculated.textContent = sumCalculated.toLocaleString();
+    if (tfootRemaining) tfootRemaining.textContent = sumRemaining.toLocaleString();
+    if (tfootCounted) tfootCounted.textContent = sumCounted.toLocaleString();
+    
+    if (tfootVariance) {
+        tfootVariance.textContent = sumVariance > 0 ? '+' + sumVariance.toLocaleString() : sumVariance.toLocaleString();
+        tfootVariance.style.color = sumVariance > 0 ? 'var(--accent-emerald)' : (sumVariance < 0 ? 'var(--accent-rose)' : 'var(--text-muted)');
+    }
+    
+    if (tfootVarianceValue) {
+        tfootVarianceValue.textContent = formatCurrency(sumVarianceValue);
+        tfootVarianceValue.style.color = sumVarianceValue > 0 ? 'var(--accent-emerald)' : (sumVarianceValue < 0 ? 'var(--accent-rose)' : 'var(--text-muted)');
+    }
+
+    if (tfootAssetValue) tfootAssetValue.textContent = formatCurrency(sumAssetValue);
 }
 
 // Recalculate top level dashboard KPI widgets based on the DOM table state and DB variance count

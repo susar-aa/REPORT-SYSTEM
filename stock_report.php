@@ -13,7 +13,7 @@ try {
             p.sku, 
             p.name, 
             p.stock AS warehouse_stock,
-            p.cost_price,
+            COALESCE(NULLIF(p.cost_price, 0.00), latest_grn.unit_cost, 0.00) AS cost_price,
             p.selling_price,
             p.counted_stock,
             c.name AS category_name,
@@ -24,6 +24,15 @@ try {
             COALESCE(vehicle.total_vehicle, 0) AS total_vehicle
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN (
+            SELECT gi.product_id, gi.unit_cost
+            FROM grn_items gi
+            INNER JOIN (
+                SELECT product_id, MAX(id) as max_id
+                FROM grn_items
+                GROUP BY product_id
+            ) latest_gi ON gi.id = latest_gi.max_id
+        ) latest_grn ON p.id = latest_grn.product_id
         LEFT JOIN (
             SELECT product_id, SUM(quantity) AS total_received 
             FROM grn_items 
@@ -345,6 +354,7 @@ try {
                                     <th style="text-align: right;">Remaining Stock</th>
                                     <th style="text-align: right; width: 120px;">Counted Stock</th>
                                     <th style="text-align: right;">Variance</th>
+                                    <th style="text-align: right;">Variance Value</th>
                                     <th class="col-cost" style="text-align: right;">Unit Cost</th>
                                     <th class="col-asset" style="text-align: right;">Total Cost Asset</th>
                                 </tr>
@@ -356,12 +366,14 @@ try {
                                         $remaining = intval($product['warehouse_stock']) + intval($product['total_vehicle']);
                                         $counted = $product['counted_stock'];
                                         $variance = ($counted !== null) ? (intval($counted) - $calculated) : ($remaining - $calculated);
+                                        $varianceValue = $variance * floatval($product['cost_price']);
                                         $assetValue = ($counted !== null ? intval($counted) : $remaining) * floatval($product['cost_price']);
                                     ?>
                                         <tr data-id="<?= $product['id'] ?>"
                                             data-category="<?= htmlspecialchars($product['category_name'] ?? 'Uncategorized') ?>" 
-                                            data-warehouse="<?= $remaining ?>"
+                                            data-warehouse="<?= ($counted !== null ? intval($counted) : $remaining) ?>"
                                             data-variance="<?= $variance ?>"
+                                            data-variance-value="<?= $varianceValue ?>"
                                             data-cost="<?= $product['cost_price'] ?>"
                                             data-selling="<?= $product['selling_price'] ?>">
                                             <td style="font-family: monospace; color: var(--text-secondary);"><?= htmlspecialchars($product['sku'] ?? 'N/A') ?></td>
@@ -391,16 +403,35 @@ try {
                                             <td style="text-align: right; font-weight: 700; color: <?= $variance > 0 ? 'var(--accent-emerald)' : ($variance < 0 ? 'var(--accent-rose)' : 'var(--text-muted)') ?>;" class="cell-variance">
                                                 <?= $variance > 0 ? '+' . $variance : ($variance < 0 ? $variance : '0') ?>
                                             </td>
+                                            <td style="text-align: right; font-weight: 600; color: <?= $varianceValue > 0 ? 'var(--accent-emerald)' : ($varianceValue < 0 ? 'var(--accent-rose)' : 'var(--text-muted)') ?>;" class="cell-variance-value">
+                                                Rs. <?= number_format($varianceValue, 2) ?>
+                                            </td>
                                             <td class="col-cost" style="text-align: right;">Rs. <?= number_format($product['cost_price'], 2) ?></td>
                                             <td class="col-asset" style="text-align: right; font-weight: 600; color: var(--accent-cyan);" class="cell-asset-value">Rs. <?= number_format($assetValue, 2) ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php else: ?>
                                     <tr class="empty-row">
-                                        <td colspan="12" style="text-align: center; padding: 4rem;">No products found in the database.</td>
+                                        <td colspan="13" style="text-align: center; padding: 4rem;">No products found in the database.</td>
                                     </tr>
                                 <?php endif; ?>
                             </tbody>
+                            <tfoot>
+                                <tr style="background: rgba(255, 255, 255, 0.05); font-weight: 700; border-top: 2px solid var(--border-glass);">
+                                    <td colspan="2" style="text-align: left; padding: 1rem; color: #fff;">Total</td>
+                                    <td class="col-grn-in" style="text-align: right; padding: 1rem;" id="total-grn">0</td>
+                                    <td class="col-sold-out" style="text-align: right; padding: 1rem; color: var(--accent-rose);" id="total-sold">0</td>
+                                    <td class="col-returned" style="text-align: right; padding: 1rem; color: var(--accent-emerald);" id="total-returned">0</td>
+                                    <td class="col-damaged" style="text-align: right; padding: 1rem; color: var(--accent-rose);" id="total-damaged">0</td>
+                                    <td class="col-calculated" style="text-align: right; padding: 1rem; color: var(--text-primary);" id="total-calculated">0</td>
+                                    <td style="text-align: right; padding: 1rem; color: var(--text-primary);" id="total-remaining">0</td>
+                                    <td style="text-align: right; padding: 1rem; color: var(--text-primary);" id="total-counted">0</td>
+                                    <td style="text-align: right; padding: 1rem;" id="total-variance">0</td>
+                                    <td style="text-align: right; padding: 1rem;" id="total-variance-value">Rs. 0.00</td>
+                                    <td class="col-cost" style="text-align: right; padding: 1rem; color: var(--text-muted); font-weight: normal;">-</td>
+                                    <td class="col-asset" style="text-align: right; padding: 1rem; color: var(--accent-cyan);" id="total-asset-value">Rs. 0.00</td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </div>
